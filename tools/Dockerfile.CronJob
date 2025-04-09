@@ -1,0 +1,56 @@
+# inspired by https://stackoverflow.com/questions/53835198/integrating-python-poetry-with-docker
+# inspired by https://github.com/wemake-services/wemake-django-template/blob/master/%7B%7Bcookiecutter.project_name%7D%7D/docker/django/Dockerfile
+FROM python:3.11-slim-bullseye
+
+# What environment are we building for - sometimes commands may be different depending on target environment
+ARG TARGET_ENV=dev \
+  UID=1000 \
+  GID=1000
+
+ENV TARGET_ENV=${TARGET_ENV} \
+  # python:
+  PYTHONFAULTHANDLER=1 \
+  PYTHONUNBUFFERED=1 \
+  PYTHONHASHSEED=random \
+  PYTHONDONTWRITEBYTECODE=1 \
+  # pip:
+  PIP_NO_CACHE_DIR=1 \
+  PIP_DISABLE_PIP_VERSION_CHECK=1 \
+  PIP_DEFAULT_TIMEOUT=100 \
+  PIP_ROOT_USER_ACTION=ignore \
+  # poetry:
+  POETRY_VERSION=1.6.1 \
+  POETRY_NO_INTERACTION=1 \
+  POETRY_VIRTUALENVS_CREATE=false \
+  POETRY_CACHE_DIR='/var/cache/pypoetry' \
+  POETRY_HOME='/usr/local' \
+  GOOGLE_APPLICATION_CREDENTIALS='/root/.config/gcloud/application_default_credentials.json'
+
+RUN pip install --upgrade pip && \
+  pip install "poetry==$POETRY_VERSION" && \
+  pip install --upgrade keyring keyrings.google-artifactregistry-auth
+
+RUN apt-get update && apt-get upgrade -y \
+  && apt-get install --no-install-recommends -y \
+  curl \
+  # Cleaning cache:
+  && apt-get purge -y --auto-remove -o APT::AutoRemove::RecommendsImportant=false \
+  && apt-get clean -y && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /workspace
+
+RUN groupadd -g "${GID}" -r web \
+  && useradd -d '/workspace' -g web -l -r -u "${UID}" web \
+  && chown web:web -R '/workspace'
+
+# First, copy the Poetry files
+COPY --chown=web:web pyproject.toml poetry.lock README.md /workspace/
+
+# Then run Poetry commands
+RUN --mount=type=cache,target="$POETRY_CACHE_DIR" \
+    --mount=type=secret,id=creds,target=/root/.config/gcloud/application_default_credentials.json \
+    poetry version && \
+    poetry install --no-interaction --no-ansi --only main
+
+COPY --chown=web:web . /workspace
+CMD ["python", "process_sftp_file.py"]
