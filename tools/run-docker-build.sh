@@ -9,5 +9,5 @@ cd $ROOT_DIR
 docker build  \
     --secret=id=creds,src="${HOME}/.config/gcloud/application_default_credentials.json" \
     -f tools/Dockerfile.CronJob \
-    -t cookiecutter-py-service:latest \
+    -t sftp-pipeline:latest \
     .
